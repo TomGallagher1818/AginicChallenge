@@ -1,3 +1,8 @@
+## Dependencies
+Python 3
+Sqlite3
+Windows is needed to run the makefile
+
 ## makefile
 The windows batch file calls ticket_gen.py, store_tickets.py and SQLScript.sql consecutively. Because ticket_gen.py requires 2 input arguments, the makefile also requires 2 arguments.
 E.g 'makefile 50 activities.json' will generate 50 tickets and store them in activities.json
