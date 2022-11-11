@@ -12,18 +12,20 @@ class Metadata:
 
 
 class Ticket:
-    def __init__(self, performed_at, ticket_id, performer_type, performer_id, activity):
+    def __init__(self, id, performed_at, ticket_id, performer_type, performer_id, activity):
+        self.id = id
         self.performed_at = performed_at
         self.ticket_id = ticket_id
         self.performer_type = performer_type
         self.performer_id = performer_id
-        self.activity = Activity(**activity)
+        self.activity = Activity(id, **activity)
     
     def __repr__(self):
-        return "ticket('{}', '{}', '{}', '{}', '{}')".format(self.performed_at, self.ticket_id, self.performer_type, self.performer_id, self.activity)
+        return "ticket('{}', '{}', '{}', '{}', '{}', '{}')".format(self.id, self.performed_at, self.ticket_id, self.performer_type, self.performer_id, self.activity)
 
 class Activity:
-    def __init__(self, note, shipping_address, shipment_date, category, contacted_customer, issue_type, source, status, priority, group, agent_id, requester, product):
+    def __init__(self, id, note, shipping_address, shipment_date, category, contacted_customer, issue_type, source, status, priority, group, agent_id, requester, product):
+        self.id = id
         self.note = Note(**note)
         self.shipping_address = shipping_address
         self.shipment_date = shipment_date
@@ -39,7 +41,7 @@ class Activity:
         self.product = product
     
     def __repr__(self):
-        return "activity('{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}')".format(self.note, self.shipping_address, self.shipment_date, 
+        return "activity('{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}')".format(self.note, self.id, self.shipping_address, self.shipment_date, 
         self.category, self.contacted_customer,self.issue_type, self.source, self.status, self.priority, self.group, self.agent_id, self.requester, self.product)
 
 class Note:
@@ -53,21 +55,26 @@ class Note:
 def create_tables(conn, c):
     with conn:
 
-        c.execute("""CREATE TABLE metadata (
-                start_at text,
-                end_at integer,
+        c.execute("""CREATE TABLE IF NOT EXISTS metadata (
+                start_at timestamp,
+                end_at timestamp,
                 activities_count integer
                 ) """)
 
-        c.execute("""CREATE TABLE tickets (
-                performed_at text,
+        c.execute("""CREATE TABLE IF NOT EXISTS tickets (
+                id integer,
                 ticket_id integer,
+                performed_at timestamp,
                 performer_type text,
                 performer_id integer,
-                PRIMARY KEY (ticket_id)
+                activity_id integer,
+                PRIMARY KEY (id),
+                FOREIGN KEY (activity_id)
+                    REFERENCES activities (activity_id)
                 ) """)
         
-        c.execute("""CREATE TABLE activities (
+        c.execute("""CREATE TABLE IF NOT EXISTS activities (
+            activity_id integer,
             ticket_id integer,
             shipping_address text,
             shipment_date text,
@@ -81,12 +88,12 @@ def create_tables(conn, c):
             agent_id integer,
             requester integer,
             product text,
-            PRIMARY KEY (ticket_id),
+            PRIMARY KEY (activity_id),
             FOREIGN KEY (ticket_id)
                 REFERENCES tickets (ticket_id)
             ) """)
 
-        c.execute("""CREATE TABLE notes (
+        c.execute("""CREATE TABLE IF NOT EXISTS notes (
             id integer,
             ticket_id integer,
             type integer,
@@ -98,23 +105,19 @@ def create_tables(conn, c):
 
 def insert_metadata(conn, c, metadata):
     with conn:
-        c.execute("INSERT INTO metadata VALUES (:start_at, :end_at, :activities_count)", {'start_at': metadata.start_at, 
-        'end_at': metadata.end_at, 'activities_count': metadata.activities_count})
+        c.execute("INSERT OR IGNORE INTO metadata VALUES('{}', '{}', '{}')".format(metadata.start_at, metadata.end_at, metadata.activities_count))
 
 def insert_ticket(conn, c, ticket):
     with conn:
-        c.execute("INSERT INTO tickets VALUES (:performed_at, :ticket_id, :performer_type, :performer_id)", {'performed_at': ticket.performed_at, 
-        'ticket_id': ticket.ticket_id, 'performer_type': ticket.performer_type, 'performer_id': ticket.performer_id})
-
-        c.execute("INSERT INTO activities VALUES (:ticket_id, :shipping_address, :shipment_date, :category, :contacted_customer, :issue_type, \
-        :source, :status, :priority, :group_option, :agent_id, :requester, :product)", {'ticket_id': ticket.ticket_id,
-        'shipping_address': ticket.activity.shipping_address, 'shipment_date': ticket.activity.shipment_date, 'category': ticket.activity.category, 
-        'contacted_customer': ticket.activity.contacted_customer, 'issue_type': ticket.activity.issue_type, 'source': ticket.activity.source, 
-        'status': ticket.activity.status, 'priority': ticket.activity.priority, 'group_option': ticket.activity.group, 'agent_id': ticket.activity.agent_id,
-        'requester': ticket.activity.requester, 'product': ticket.activity.product})
-
-        c.execute("INSERT INTO notes VALUES (:id, :ticket_id, :type)", {'id': ticket.activity.note.id, 'ticket_id': ticket.ticket_id, 
-        'type': ticket.activity.note.type})
+        c.execute("INSERT OR IGNORE INTO tickets VALUES('{}', '{}', '{}', '{}', '{}', '{}')".format(ticket.id, ticket.ticket_id, ticket.performed_at, 
+        ticket.performer_type, ticket.performer_id, ticket.activity.id))
+    
+        c.execute("INSERT OR IGNORE INTO activities VALUES('{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}', '{}')".format(
+            ticket.activity.id, ticket.id, ticket.activity.shipping_address, ticket.activity.shipment_date,ticket.activity.category, ticket.activity.contacted_customer,
+            ticket.activity.issue_type, ticket.activity.source, ticket.activity.status, ticket.activity.priority, ticket.activity.group, ticket.activity.agent_id,
+            ticket.activity.requester,ticket.activity.product))
+        
+        c.execute("INSERT OR IGNORE INTO notes VALUES('{}', '{}', '{}')".format(ticket.activity.note.id, ticket.ticket_id, ticket.activity.note.type))
         
 
 
@@ -130,10 +133,12 @@ if __name__ == '__main__':
     metadata = jsonData['metadata']
     metadataObject = Metadata(**metadata)
     insert_metadata(conn, c, metadataObject)
-
+    id = 1
     for ticket in jsonData['activities_data']:
-        ticketObject = Ticket(**ticket)
+        ticketObject = Ticket(id, **ticket)
+        
         insert_ticket(conn, c, ticketObject)
-
+        id += 1
+    
     conn.close()
     f.close()

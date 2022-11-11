@@ -4,6 +4,7 @@ IF %2.==. GOTO InvalidArg
 
 python ticket_gen.py -n %1 -o %2
 python store_tickets.py
+sqlite3 tickets.db ".read SQLScript.sql"
 
 GOTO End1
 :InvalidArg
